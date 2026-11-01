@@ -1,0 +1,53 @@
+--- a/pexpert/arm/pe_serial.c
++++ b/pexpert/arm/pe_serial.c
+@@ -735,6 +735,33 @@
+ 	}
+ }
+ 
++/*
++ * A32: the s6e3fc3 panel is in DSI command mode, it only shows a new frame when the display
++ * pipeline is triggered. The shim does it the way LK does (mutex0 EN, DSI_START 0 -> 1) and that
++ * made its console visible on the phone. Do the same after every completed console line.
++ * mutex0 0x14001000 (+0x20), dsi0 0x14014000 (+0x00). Mapped on first use.
++ */
++extern vm_offset_t ml_io_map(vm_offset_t phys_addr, vm_size_t size);
++static volatile uint32_t *fbcon_kick_mutex, *fbcon_kick_dsi;
++static bool fbcon_kick_tried;
++
++static void
++fbcon_kick(void)
++{
++	if (!fbcon_kick_tried) {
++		fbcon_kick_tried = true;
++		fbcon_kick_mutex = (volatile uint32_t *)ml_io_map(0x14001000UL, 0x1000);
++		fbcon_kick_dsi = (volatile uint32_t *)ml_io_map(0x14014000UL, 0x1000);
++	}
++	if (fbcon_kick_mutex == NULL || fbcon_kick_dsi == NULL) {
++		return;
++	}
++	__asm__ volatile ("dsb sy" ::: "memory");
++	fbcon_kick_mutex[0x20 / 4] = 1;
++	fbcon_kick_dsi[0] = 0;
++	fbcon_kick_dsi[0] = 1;
++}
++
+ static void
+ fbcon_newline(void)
+ {
+@@ -742,12 +769,16 @@
+ 	fbcon_row = (fbcon_row + 1) % fbcon_rows;
+ 	fbcon_clear_row(fbcon_row);
+ 	fbcon_clear_row((fbcon_row + 1) % fbcon_rows);
++	fbcon_kick();
+ }
+ 
+ static void
+ fbcon_init(void)
+ {
+ 	fbcon_cols = fbcon_width / (8 * FBCON_SCALE);
++	if (fbcon_cols > 44) {
++		fbcon_cols = 44;	/* only the left ~700 px of the A32 console are reliably visible */
++	}
+ 	fbcon_rows = fbcon_height / (16 * FBCON_SCALE);
+ 	fbcon_col = fbcon_row = 0;
+ 	for (uint32_t r = 0; r < fbcon_rows; r++) {
