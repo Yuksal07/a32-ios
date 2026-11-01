@@ -1,0 +1,35 @@
+diff --git a/osfmk/arm64/start.s b/osfmk/arm64/start.s
+index dd676eb..9df81a2 100644
+--- a/osfmk/arm64/start.s
++++ b/osfmk/arm64/start.s
+@@ -33,12 +33,12 @@ x
+ 
+ #if defined(SWEET)
+ 	/* Stage 0: white 64x32 band, no stack or page tables needed. */
+-	MOV64	x0, (0x7c720000 + 2368 * 4352)
++	MOV64	x0, (0x7c720000 + 2200 * 4352)
+ 	mov		w1, #-1
+-	mov		x2, #32
++	mov		x2, #200
+ 	mov		x4, #4352
+ Lsweet_mark_row:
+-	mov		x3, #64
++	mov		x3, #1080
+ 	mov		x5, x0
+ Lsweet_mark_pixel:
+ 	str		w1, [x5], #4
+@@ -48,6 +48,14 @@ Lsweet_mark_pixel:
+ 	subs	x2, x2, #1
+ 	b.ne	Lsweet_mark_row
+ 	dsb		sy
++	/* The panel is in command mode: trigger a transfer (MMU is off, physical access). */
++	MOV64	x0, 0x14001000
++	mov		w1, #1
++	str		w1, [x0, #0x20]
++	MOV64	x0, 0x14014000
++	str		wzr, [x0]
++	str		w1, [x0]
++	dsb		sy
+ #endif
+ 
+ 	// Set low reset vector before attempting any loads
